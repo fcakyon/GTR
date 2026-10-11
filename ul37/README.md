@@ -41,6 +41,19 @@ same `--name`, then score once with `--val-only` after all shards finish.
 (`io_fp32.py`). `gtr_ref.py` saves the PyTorch FP32 reference outputs for the TensorRT parity check. Both run with
 this checkout's `.venv` plus onnx, onnxsim and onnxruntime.
 
+## COCO eval
+
+`coco_eval.py` scores a released COCO detector on COCO val2017 and COCO-SAMA (labels below). Its docstring lists the
+outputs. Our scores used faster-coco-eval 1.7.0 from a separate dir D
+(`uv pip install --target D faster-coco-eval==1.7.0`).
+
+```bash
+CUDA_VISIBLE_DEVICES=0 PYTHONPATH=D .venv/bin/python ul37/coco_eval.py CONFIG WEIGHTS --images coco/images/val2017 \
+  --name NAME --output OUT --ann coco=coco/annotations/instances_val2017.json sama-coco=sama-coco/instances_val2017.json
+```
+
+CONFIG is `configs/det/coco_finetune/gtr_SIZE.yml` and WEIGHTS is `gtr_SIZE_coco.pth`, SIZE one of s, m, l, x.
+
 ## COCO-SAMA labels
 
 COCO-SAMA re-annotates COCO val2017 images. Build its `instances_val2017.json` from Sama's release:
