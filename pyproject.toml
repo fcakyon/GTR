@@ -1,0 +1,33 @@
+[project]
+name = "gtr"
+version = "0.0.1"
+requires-python = "==3.11.*"
+dependencies = [ # requirements.txt, versions pinned in uv.lock
+    "torch==2.11.0",
+    "torchvision==0.26.0",
+    "flash-linear-attention==0.5.0",
+    "calflops",
+    "einops",
+    "faster-coco-eval",
+    "h5py",
+    "lmdb",
+    "ninja",
+    "opencv-python-headless",
+    "pyyaml",
+    "scipy",
+    "tensorboard",
+    "transformers",
+]
+
+[tool.uv]
+package = false
+environments = ["sys_platform == 'linux'"]
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
