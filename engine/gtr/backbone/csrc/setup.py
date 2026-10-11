@@ -23,9 +23,7 @@ setup(
                 'nvcc': [
                     '-O3', '-std=c++17',
                     '--use_fast_math',
-                    '-gencode=arch=compute_89,code=sm_89',  # RTX 4090
-                    '-gencode=arch=compute_86,code=sm_86',  # 30xx
-                    '-gencode=arch=compute_80,code=sm_80',  # A100
+                    '-gencode=arch=compute_120,code=sm_120',  # RTX 6000D / RTX PRO 6000 (Blackwell)
                 ],
             },
             include_dirs=[here],
