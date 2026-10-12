@@ -7,6 +7,10 @@ xywh boxes in original image pixels. Score evaluates that json with faster-coco-
 every given annotation file, which must share the image ids and categories of the first one, and prints one SCORE line
 with AP, AP50, APs, APm and APl as percentages.
 
+`--engine` replaces the PyTorch forward with a static batch-1 TensorRT engine of the checkpoint, run with
+`--batch 1`, and `--plugin` loads the TensorRT plugin library it needs. Everything else stays, so its SCORE line,
+which then hashes the engine, compares directly with the FP32 one.
+
 Usage:
     CUDA_VISIBLE_DEVICES=0 python ul37/coco_eval.py configs/det/coco_finetune/gtr_x.yml \
         gtr_x_coco.pth --images coco/val2017 --name gtr-x --output out \
@@ -24,7 +28,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # the repo's engine package
 
 
-def predict(config: Path, weights: Path, images: Path, ann_file: Path, output: Path, batch: int) -> None:
+def predict(
+    config: Path,
+    weights: Path,
+    images: Path,
+    ann_file: Path,
+    output: Path,
+    batch: int,
+    engine: Path | None = None,
+    plugin: Path | None = None,
+) -> None:
     """Write the COCO results json of a GTR checkpoint on every image of one annotation file.
 
     Args:
@@ -34,6 +47,8 @@ def predict(config: Path, weights: Path, images: Path, ann_file: Path, output: P
         ann_file (Path): COCO annotation json whose images are evaluated.
         output (Path): Results json to write.
         batch (int): Images per forward pass.
+        engine (Path | None): Static batch-1 TensorRT engine of the checkpoint to run instead of PyTorch.
+        plugin (Path | None): TensorRT plugin library the engine needs.
     """
     import torch
     from engine.core import YAMLConfig
@@ -49,6 +64,30 @@ def predict(config: Path, weights: Path, images: Path, ann_file: Path, output: P
     model, postprocessor = cfg.model.eval(), cfg.postprocessor.eval()
     model.load_state_dict(checkpoint["ema"]["module"])
     model, postprocessor = model.cuda(), postprocessor.cuda()
+    if engine:  # same loader and postprocessor around the engine, which carries an Ultralytics metadata header
+        import tensorrt as trt
+
+        if plugin:
+            import ctypes
+
+            ctypes.CDLL(str(plugin), mode=ctypes.RTLD_GLOBAL)
+
+        data = engine.read_bytes()
+        runtime = trt.Runtime(trt.Logger(trt.Logger.ERROR))
+        context = runtime.deserialize_cuda_engine(
+            data[4 + int.from_bytes(data[:4], "little") :]
+        ).create_execution_context()
+        io = {}
+        for name in map(context.engine.get_tensor_name, range(context.engine.num_io_tensors)):
+            dtype = getattr(torch, trt.nptype(context.engine.get_tensor_dtype(name)).__name__)
+            io[name] = torch.empty(tuple(context.engine.get_tensor_shape(name)), dtype=dtype, device="cuda")
+            context.set_tensor_address(name, io[name].data_ptr())
+
+        def model(samples):
+            io["images"].copy_(samples)
+            context.execute_async_v3(torch.cuda.current_stream().cuda_stream)
+            return io
+
     records = []
     with torch.no_grad():
         for samples, targets in cfg.val_dataloader:
@@ -104,13 +143,17 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True, help="directory for the results json")
     parser.add_argument("--name", required=True, help="model name for the results file and SCORE line")
     parser.add_argument("--batch", type=int, default=32)
+    parser.add_argument("--engine", type=Path, help="TensorRT engine of the checkpoint to score, with --batch 1")
+    parser.add_argument("--plugin", type=Path, help="TensorRT plugin library the engine needs")
     args = parser.parse_args()
 
     anns = {name: Path(path) for name, path in (item.split("=", 1) for item in args.ann)}
     args.output.mkdir(parents=True, exist_ok=True)
     results = args.output / f"{args.name}.json"
-    predict(args.config, args.weights, args.images, next(iter(anns.values())), results, args.batch)
-    sha = hashlib.sha256(args.weights.read_bytes()).hexdigest()[:8]
+    predict(
+        args.config, args.weights, args.images, next(iter(anns.values())), results, args.batch, args.engine, args.plugin
+    )
+    sha = hashlib.sha256((args.engine or args.weights).read_bytes()).hexdigest()[:8]
     print("SCORE", json.dumps({"model": args.name, "sha256": sha, **score(results, anns)}), flush=True)
 
 
