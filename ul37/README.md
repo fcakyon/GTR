@@ -41,6 +41,11 @@ same `--name`, then score once with `--val-only` after all shards finish.
 (`io_fp32.py`). `gtr_ref.py` saves the PyTorch FP32 reference outputs for the TensorRT parity check. Both run with
 this checkout's `.venv` plus onnx, onnxsim and onnxruntime.
 
+`PLUGIN=1 export_gtr.sh GPU STAGE` exports GLA as GatedLinearAttention plugin nodes instead (`gtr-SIZE-plugin.onnx`).
+Those engines need the plugin built with `gla_plugin/gla_chunk.cuh`, Esat's fix for the NaN outputs of the upstream
+kernel on trained weights. `gla_plugin/build.sh TRT_PY TRT_INCLUDE` compiles it for TensorRT 11.2 on sm_120 into
+`tensorrt_plugin/trt_plugin/libgla_plugin.so`. Load that library before building or running a plugin engine.
+
 ## COCO eval
 
 `coco_eval.py` scores a released COCO detector on COCO val2017 and COCO-SAMA (labels below). Its docstring lists the
